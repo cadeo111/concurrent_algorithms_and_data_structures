@@ -118,9 +118,21 @@ int task_1() {
     {
         std::cout << "## Valid Sequence" << std::endl;
         std::queue<SetEvent> sequence;
-        
-        // A01: Add a valid sequence of 10+ instructions
-        
+        sequence.push(SetEvent(SetOperator::Add, 1, true));
+        sequence.push(SetEvent(SetOperator::Add, 2, true));
+        sequence.push(SetEvent(SetOperator::Add, 3, true));
+        sequence.push(SetEvent(SetOperator::Add, 4, true));
+        sequence.push(SetEvent(SetOperator::Add, 5, true));
+        sequence.push(SetEvent(SetOperator::Contains, 1, true));
+        sequence.push(SetEvent(SetOperator::Remove, 2, true));
+        sequence.push(SetEvent(SetOperator::Contains, 2, false));
+        sequence.push(SetEvent(SetOperator::Remove, 1, true));
+        sequence.push(SetEvent(SetOperator::Remove, 1, false));
+        sequence.push(SetEvent(SetOperator::Contains, 5, true));
+        sequence.push(SetEvent(SetOperator::Add, 1, true));
+        sequence.push(SetEvent(SetOperator::Contains, 3, true));
+        sequence.push(SetEvent(SetOperator::Add, 3, false));
+        sequence.push(SetEvent(SetOperator::Contains, 4, true));
         StdSet set;
         test_events(&set, &sequence, true);
         std::cout << std::endl;
@@ -129,6 +141,12 @@ int task_1() {
     {
         std::cout << "## Invalid add" << std::endl;
         std::queue<SetEvent> sequence;
+        sequence.push(SetEvent(SetOperator::Add, 3, true));
+        sequence.push(SetEvent(SetOperator::Add, 4, true));
+        sequence.push(SetEvent(SetOperator::Add, 5, true));
+        sequence.push(SetEvent(SetOperator::Add, 1, true));
+        sequence.push(SetEvent(SetOperator::Add, 2, true));
+        sequence.push(SetEvent(SetOperator::Add, 3, true));
         
         // A01: Add a sequence that fails an `add(3)` after 5 instructions
         
@@ -141,7 +159,12 @@ int task_1() {
         std::cout << "## Invalid contains" << std::endl;
         std::queue<SetEvent> sequence;
         
-        // A01: Add a sequence that fails an `contains(3)` after 5 instructions
+        sequence.push(SetEvent(SetOperator::Add, 6, true));
+        sequence.push(SetEvent(SetOperator::Add, 4, true));
+        sequence.push(SetEvent(SetOperator::Add, 5, true));
+        sequence.push(SetEvent(SetOperator::Add, 1, true));
+        sequence.push(SetEvent(SetOperator::Add, 2, true));
+        sequence.push(SetEvent(SetOperator::Contains, 3, true));
         
         StdSet set;
         test_events(&set, &sequence, true);
@@ -152,7 +175,12 @@ int task_1() {
         std::cout << "## Invalid remove" << std::endl;
         std::queue<SetEvent> sequence;
         
-        // A01: Add a sequence that fails an `remove(3)` after 5 instructions
+        sequence.push(SetEvent(SetOperator::Add, 6, true));
+        sequence.push(SetEvent(SetOperator::Add, 4, true));
+        sequence.push(SetEvent(SetOperator::Add, 5, true));
+        sequence.push(SetEvent(SetOperator::Add, 1, true));
+        sequence.push(SetEvent(SetOperator::Add, 2, true));
+        sequence.push(SetEvent(SetOperator::Remove, 3, true));
         
         StdSet set;
         test_events(&set, &sequence, true);

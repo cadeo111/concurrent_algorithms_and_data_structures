@@ -10,7 +10,7 @@
 struct CoarseSetNode {
     // A03: You can add or remove fields as needed.
     int value;
-    CoarseSetNode* next;
+    std::unique_ptr<CoarseSetNode> next;
 };
 
 /// A set implementation using a linked list with coarse grained locking.
@@ -18,7 +18,7 @@ class CoarseSet: public Set {
 private:
     // A03: You can add or remove fields as needed. Just having the `head`
     // pointer and the `lock` should be sufficient for task 3
-    CoarseSetNode* head;
+    std::unique_ptr<CoarseSetNode> head;
     std::mutex lock;
     EventMonitor<CoarseSet, StdSet, SetOperator>* monitor;
 public:
@@ -32,8 +32,17 @@ public:
         // A03: Cleanup any memory that was allocated
     }
 
+    bool _add_unsafe(int elem) {
+
+
+
+    }
+
     bool add(int elem) override {
-        bool result = false;
+        lock.lock();
+        bool result = _add_unsafe(elem);
+        lock.unlock();
+
         // A03: Add code to insert the element into the set and update `result`.
         //      Also make sure, to insert the event inside the locked region of
         //      the linearization point.
