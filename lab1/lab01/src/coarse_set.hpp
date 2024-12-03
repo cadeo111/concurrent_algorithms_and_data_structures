@@ -7,13 +7,13 @@
 
 #include "simple_set.hpp"
 
-/// The node used for the linked list implementation of a set in the [`CoarseSet`]
-/// class. This struct is used for task 3
-struct CoarseSetNode {
-    // A03: You can add or remove fields as needed.
-    int value;
-    std::unique_ptr<CoarseSetNode> next;
-};
+// /// The node used for the linked list implementation of a set in the [`CoarseSet`]
+// /// class. This struct is used for task 3
+// struct CoarseSetNode {
+//     // A03: You can add or remove fields as needed.
+//     int value;
+//     std::unique_ptr<CoarseSetNode> next;
+// };
 
 /// A set implementation using a linked list with coarse grained locking.
 class CoarseSet : public Set {
@@ -25,8 +25,8 @@ private:
     EventMonitor<CoarseSet, StdSet, SetOperator> *monitor;
 
 public:
-    CoarseSet(EventMonitor<CoarseSet, StdSet, SetOperator> *monitor) : monitor(monitor),
-                                                                       unsafe_set(SimpleSetImpl("CoarseSet")) {
+    CoarseSet(EventMonitor<CoarseSet, StdSet, SetOperator> *monitor) : unsafe_set(SimpleSetImpl("CoarseSet")),
+                                                                       monitor(monitor) {
         // A03: Initiate the internal state
     }
 

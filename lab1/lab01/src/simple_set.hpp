@@ -26,7 +26,7 @@ public:
     ~SimpleSetImpl() = default;
 
     bool add(int elem) {
-        // std::cout << "adding " << elem << "\n";
+
         // If the list is empty add the value and return true
         if (this->head == nullptr) {
             this->head = std::make_shared<SimpleSetNode>(SimpleSetNode{
@@ -116,6 +116,7 @@ public:
 
     bool ctn(const int elem) {
         auto node = this->head;
+        if (node == nullptr) return false;
         while (true) {
             if (node->value == elem) return true;
             if (node->next == nullptr) return false;
