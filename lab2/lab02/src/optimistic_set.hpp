@@ -3,9 +3,11 @@
 #include "set.hpp"
 #include "std_set.hpp"
 
+
 #include <mutex>
 #include <atomic>
 #include <utility>
+#include <sstream>
 
 /// The node used for the linked list implementation of a set in the [`OptimisticSet`]
 /// class. This struct is used for task 3
@@ -66,14 +68,14 @@ public:
     }
 
 private:
-    bool validate(const std::shared_ptr<OptimisticSetNode> &p, const std::shared_ptr<OptimisticSetNode> &c) {
+    bool validate(std::shared_ptr<OptimisticSetNode> &p, std::shared_ptr<OptimisticSetNode> &c) {
         auto n = head;
         while (n->value < p->value) {
             n = n->next;
         }
 
         if (n->value == p->value) {
-            if ( p->next->value == c->value) {
+            if (p->next->value == c->value) {
                 return true;
             }
         }
@@ -87,7 +89,7 @@ public:
         while (true) {
             auto p = head;
             auto c = p->next;
-            while (c->value <= elem) {
+            while (c->value < elem) {
                 p = c;
                 c = c->next;
             }
@@ -144,9 +146,23 @@ public:
         }
     }
 
+    std::string print_state_str() {
+        // A01: Optionally, add code to print the state. This is useful for debugging,
+        // but not part of the assignment
+        std::stringstream ss;
+        ss << "OptimisticSet { ";
+        auto n = head;
+        while (n->next != nullptr) {
+            ss << "value: " << n->value << ", ";
+            n = n->next;
+        }
+        ss << " }";
+        return ss.str();
+    }
+
     void print_state() override {
         // A01: Optionally, add code to print the state. This is useful for debugging,
         // but not part of the assignment
-        std::cout << "OptimisticSet {...}";
+        std::cout << print_state_str();
     }
 };
