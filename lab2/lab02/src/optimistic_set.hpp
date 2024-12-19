@@ -3,7 +3,8 @@
 #include "set.hpp"
 #include "std_set.hpp"
 
-
+// ReSharper disable once CppUnusedIncludeDirective
+#include <memory> // used by linux
 #include <mutex>
 #include <atomic>
 #include <utility>
