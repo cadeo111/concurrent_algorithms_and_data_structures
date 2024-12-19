@@ -3,28 +3,57 @@
 #include "set.hpp"
 #include "std_set.hpp"
 
+// ReSharper disable once CppUnusedIncludeDirective
+#include <future>
+#include <memory> // used by linux
 #include <mutex>
+#include <sstream>
 
 /// The node used for the linked list implementation of a multiset in the
 /// [`FineMultiset`] class. This struct is used for task 4.
 struct FineMultisetNode {
     // A06: You can add or remove fields as needed.
     int value;
-    FineMultisetNode* next;
+    int count;
+    std::shared_ptr<FineMultisetNode> next;
     std::mutex lock;
+
+    explicit FineMultisetNode(int value, int count)
+        : value(value), count(count), next(nullptr), lock(std::mutex()) {
+    }
+
+    FineMultisetNode(int value,int count,  std::shared_ptr<FineMultisetNode> next)
+        : value(value),
+          next(std::move(next)), count(count), lock(std::mutex()) {
+    }
 };
 
 /// A multiset implementation using a linked list with fine grained locking.
-class FineMultiset: public Multiset {
+class FineMultiset : public Multiset {
 private:
     // A06: You can add or remove fields as needed.
-    FineMultisetNode* head;
-    EventMonitor<FineMultiset, StdMultiset, MultisetOperator>* monitor;
+    std::shared_ptr<FineMultisetNode> head;
+    EventMonitor<FineMultiset, StdMultiset, MultisetOperator> *monitor;
+
+private:
+    std::shared_ptr<FineMultisetNode> locate(int value) {
+        // A02: Implement the `locate` function used for lazy synchronization.
+        auto p = head;
+        p->lock.lock();
+        auto c = p->next;
+        c->lock.lock();
+        while (c->value < value) {
+            p->lock.unlock();
+            p = c;
+            c = c->next;
+            c->lock.lock();
+        }
+        return p;
+    }
+
 public:
-    FineMultiset(EventMonitor<FineMultiset, StdMultiset, MultisetOperator>* monitor) :
-        monitor(monitor)
-    {
-        // A06: Initiate the internal state
+    FineMultiset(EventMonitor<FineMultiset, StdMultiset, MultisetOperator> *monitor) : monitor(monitor) {
+        head = std::make_shared<FineMultisetNode>(INT_MIN, 0,std::make_shared<FineMultisetNode>(INT_MAX, 0));
     }
 
     ~FineMultiset() override {
@@ -32,25 +61,58 @@ public:
     }
 
     int add(int elem) override {
-        int result = true;
-        // A06: Add code to insert the element into the set.
-        //      Make sure, to insert the event inside the locked region of
-        //      the linearization point.
-        this->monitor->add(MultisetEvent(MultisetOperator::MSetAdd, elem, result));
-        return result;
+        auto p = locate(elem);
+        auto c = p->next;
+        // this will release locks when function exits, adopt lock is because the mutex has been already locked
+        std::lock_guard guardP(p->lock, std::adopt_lock);
+        std::lock_guard guardC(c->lock, std::adopt_lock);
+        if (c->value == elem) {
+            c->count += 1;
+            this->monitor->add(MultisetEvent(MultisetOperator::MSetAdd, elem, true));
+            return true;
+        }
+
+        auto n = std::make_shared<FineMultisetNode>(elem, 1);
+        n->next = c;
+        p->next = n;
+        this->monitor->add(MultisetEvent(MultisetOperator::MSetAdd, elem, true));
+        return true;
     }
 
     int rmv(int elem) override {
-        int result = false;
-        // A06: Add code to remove the element from the set and update `result`.
-        //      Also make sure, to insert the event inside the locked region of
-        //      the linearization point.
-        this->monitor->add(MultisetEvent(MultisetOperator::MSetRemove, elem, result));
-        return result;
+        auto p = locate(elem);
+        auto c = p->next;
+        // this will release locks when function exits, adopt lock is because the mutex has been already locked
+        std::lock_guard guardP(p->lock, std::adopt_lock);
+        std::lock_guard guardC(c->lock, std::adopt_lock);
+        if (c->value != elem) {
+            this->monitor->add(MultisetEvent(MultisetOperator::MSetRemove, elem, false));
+            return false;
+        }
+        if (c->count > 1) {
+            c->count -= 1;
+        }else {
+            p->next = c->next;
+        }
+        this->monitor->add(MultisetEvent(MultisetOperator::MSetRemove, elem, true));
+        return true;
     }
 
     int ctn(int elem) override {
         int result = 0;
+        auto p = locate(elem);
+        auto c = p->next;
+        // this will release locks when function exits, adopt lock is because the mutex has been already locked
+        std::lock_guard guardP(p->lock, std::adopt_lock);
+        std::lock_guard guardC(c->lock, std::adopt_lock);
+        if (c->value == elem) {
+            this->monitor->add(MultisetEvent(MultisetOperator::MSetCount, elem, c->count));
+            return c->count;
+        } else {
+            this->monitor->add(MultisetEvent(MultisetOperator::MSetCount, elem, 0));
+            return false;
+        }
+
         // A06: Add code to count how often elem is inside the set and update `result`.
         //      Also make sure, to insert the event inside the locked region of
         //      the linearization point.
@@ -65,10 +127,23 @@ public:
         return result;
     }
 
-    void print_state() override {
-        // A06: Optionally, add code to print the state. This is useful for debugging,
+    std::string print_state_str() {
+        // A01: Optionally, add code to print the state. This is useful for debugging,
         // but not part of the assignment
-        std::cout << "FineMultiset {...}";
+        std::stringstream ss;
+        ss << "FineMultiset { ";
+        auto n = head;
+        while (n->next != nullptr) {
+            ss << "k:" << n->value << "+" << n->count<< ", ";
+            n = n->next;
+        }
+        ss << " }";
+        return ss.str();
+    }
+
+    void print_state() override {
+        // A01: Optionally, add code to print the state. This is useful for debugging,
+        // but not part of the assignment
+        std::cout << print_state_str();
     }
 };
-
