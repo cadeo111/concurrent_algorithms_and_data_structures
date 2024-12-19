@@ -9,6 +9,7 @@
 #include <thread>
 #include <atomic>
 
+// #include "fine_set.hpp"
 #include "set.hpp"
 
 #define DEQUE_SLEEP_DELAY 50
@@ -19,7 +20,7 @@ enum SetOperator {
     Contains = 3,
 };
 
-char const* operator_name(SetOperator op) {
+char const *operator_name(SetOperator op) {
     switch (op) {
         case SetOperator::Add:
             return "add";
@@ -39,18 +40,18 @@ struct Operation {
     /// The argument for the operator.
     int argument;
 
-    Operation(Op op, int argument) :
-        op(op),
-        argument(argument)
-    {}
+    Operation(Op op, int argument) : op(op),
+                                     argument(argument) {
+    }
 
     void print() {
         std::cout << operator_name(this->op) << "(" << this->argument << ")";
     }
 };
+
 typedef Operation<SetOperator> SetOperation;
 
-bool apply_op(Set* set, Operation<SetOperator>& op) {
+bool apply_op(Set *set, Operation<SetOperator> &op) {
     switch (op.op) {
         case SetOperator::Add:
             return set->add(op.argument);
@@ -79,7 +80,7 @@ class OpGenerator {
     /// integer, to share the count across all threads.
     std::atomic_int counter;
     /// The weight of the operators, that can be generated.
-    std::vector<OpWeights<Op>> weights;
+    std::vector<OpWeights<Op> > weights;
     /// The total weight used as a modulo during generation.
     int total_weight;
     /// A modulo applied to the number generated as the argument for the operations.
@@ -91,18 +92,16 @@ class OpGenerator {
 
 public:
     OpGenerator(
-        std::vector<OpWeights<Op>> weights,
+        std::vector<OpWeights<Op> > weights,
         int target_op_count,
         int argument_modulo,
         int seed
-    ) :
-        target_op_count(target_op_count),
+    ) : target_op_count(target_op_count),
         weights(weights),
         argument_modulo(argument_modulo),
-        seed(seed)
-    {
+        seed(seed) {
         total_weight = 0;
-        for (int i = 0; i < (int)this->weights.size(); i++) {
+        for (int i = 0; i < (int) this->weights.size(); i++) {
             total_weight += this->weights[i].weight;
         }
 
@@ -114,7 +113,7 @@ public:
         srand(this->seed);
     }
 
-    std::optional<Operation<Op>> next() {
+    std::optional<Operation<Op> > next() {
         if (this->counter.fetch_add(1) >= target_op_count) {
             return std::nullopt;
         }
@@ -144,21 +143,21 @@ struct Event {
     /// The result of the performed operation.
     bool output;
 
-    Event(Op op, int arg, bool output) :
-        op(op, arg),
-        output(output)
-    {}
+    Event(Op op, int arg, bool output) : op(op, arg),
+                                         output(output) {
+    }
 
     void print() {
         this->op.print();
         std::cout << " -> " << this->output;
     }
 };
+
 typedef Event<SetOperator> SetEvent;
 
 /// Returns `true` if the given event can be successfully applied to the given data structure
 template<typename DS, typename Op>
-bool test_event(DS* data_structure, Event<Op>& event) {
+bool test_event(DS *data_structure, Event<Op> &event) {
     bool result = apply_op(data_structure, event.op);
     if (result != event.output) {
         std::cout << "- ";
@@ -175,7 +174,7 @@ bool test_event(DS* data_structure, Event<Op>& event) {
 
 /// Returns `true` if the given events can be successfully applied to the given data structure
 template<typename DS, typename Op>
-bool test_events(DS* data_structure, std::queue<Event<Op>>* events, bool verbose = false) {
+bool test_events(DS *data_structure, std::queue<Event<Op> > *events, bool verbose = false) {
     while (!events->empty()) {
         if (!test_event(data_structure, events->front())) {
             // Any errors are printed by `test_event`
@@ -200,16 +199,19 @@ bool test_events(DS* data_structure, std::queue<Event<Op>>* events, bool verbose
 template<typename CAS, typename DS, typename Op>
 class EventMonitor {
 public:
-    EventMonitor(DS* data_structure) :
-        data_structure(data_structure),
-        concurrent_data_structure(nullptr)
-    {
+    EventMonitor(DS *data_structure) : data_structure(data_structure),
+                                       concurrent_data_structure(nullptr) {
     }
 
     void add(Event<Op> event) {
         this->lock.lock(); // Linearization point (For anyone that is interested)
+        event.print();
+        std::cout << std::endl;
         this->events_to_test.push(event);
         this->lock.unlock();
+    }
+
+    void verify() {
     }
 
     void finish() {
@@ -225,7 +227,7 @@ public:
                 running = false;
             }
 
-            std::queue<Event<Op>> events_to_test;
+            std::queue<Event<Op> > events_to_test;
             this->lock.lock(); // Linearization point
             this->events_to_test.swap(events_to_test);
             this->lock.unlock();
@@ -235,6 +237,7 @@ public:
             } else {
                 this->event_count += events_to_test.size();
                 this->valid &= test_events(this->data_structure, &events_to_test, false);
+                // reinterpret_cast<FineSet *>(this->data_structure)->verifyState();
 
                 if (!this->valid) {
                     if (this->concurrent_data_structure) {
@@ -261,20 +264,20 @@ public:
         return this->valid;
     }
 
-    void set_concurrent_data_structure(CAS* cas) {
+    void set_concurrent_data_structure(CAS *cas) {
         this->concurrent_data_structure = cas;
     }
 
 private:
-    std::queue<Event<Op>> events_to_test;
+    std::queue<Event<Op> > events_to_test;
     std::mutex lock;
 
     // For monitoring and validation
-    DS* data_structure;
+    DS *data_structure;
     int event_count = 0;
     bool stop = false;
     bool valid = true;
 
     /// The concurrent data structure, to print the internal state:
-    CAS* concurrent_data_structure;
+    CAS *concurrent_data_structure;
 };

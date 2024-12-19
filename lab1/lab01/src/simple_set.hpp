@@ -1,9 +1,11 @@
 #pragma once
 
 #include "set.hpp"
+#include "std_set.hpp"
+#include "monitoring.hpp"
 
 #include <utility>
-#include "std_set.hpp"
+#include <sstream>
 
 /// The node used for the linked list implementation of a set in the [`SimpleSet`]
 /// class. This struct is used for task 2
@@ -14,7 +16,6 @@ struct SimpleSetNode {
 };
 
 class SimpleSetImpl {
-private:
     std::shared_ptr<SimpleSetNode> head;
     std::string label;
 
@@ -26,7 +27,6 @@ public:
     ~SimpleSetImpl() = default;
 
     bool add(int elem) {
-
         // If the list is empty add the value and return true
         if (this->head == nullptr) {
             this->head = std::make_shared<SimpleSetNode>(SimpleSetNode{
@@ -139,21 +139,44 @@ public:
         }
     }
 
-    void print_state() const {
-        // A02: Optionally, add code to print the state. This is useful for debugging,
-        // but not part of the assignment.
-        std::cout << label << " {";
+    [[nodiscard]] std::string state_str() const {
+        std::stringstream ss;
+        ss << label << " {";
         auto node = this->head;
         while (node != nullptr) {
-            std::cout << node->value;
+            ss << node->value;
             if (node->next != nullptr) {
-                std::cout << ", ";
+                ss << ", ";
             }
             node = node->next;
         }
-        std::cout << "}";
+        ss << "}";
+        return ss.str();
+    }
+    [[nodiscard]] std::string state_str_cmp() const {
+        std::stringstream ss;
+        auto node = this->head;
+        while (node != nullptr) {
+            ss << node->value;
+            if (node->next != nullptr) {
+                ss << ",";
+            }
+            node = node->next;
+        }
+        return ss.str();
+    }
+
+    void print_state() const {
+        // A02: Optionally, add code to print the state. This is useful for debugging,
+        // but not part of the assignment.
+        std::cout << state_str();
+    }
+
+    std::shared_ptr<SimpleSetNode> get_head() {
+        return this->head;
     }
 };
+
 /// A simple set implementation using a linked list. This class shouldn't have
 // any synchronization yet.
 class SimpleSet : public Set {
@@ -164,7 +187,8 @@ private:
     EventMonitor<SimpleSet, StdSet, SetOperator> *monitor;
 
 public:
-    explicit SimpleSet(EventMonitor<SimpleSet, StdSet, SetOperator> *monitor) : set(SimpleSetImpl("SimpleSet")), monitor(monitor) {
+    explicit SimpleSet(EventMonitor<SimpleSet, StdSet, SetOperator> *monitor) : set(SimpleSetImpl("SimpleSet")),
+        monitor(monitor) {
         // A02: Initiate the internal state
     }
 

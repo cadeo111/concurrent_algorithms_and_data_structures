@@ -2,10 +2,46 @@
 
 #include "set.hpp"
 #include "std_set.hpp"
+#include <string>
 
 #include <mutex>
+#include <shared_mutex>
 #include <utility>
 #include <sstream>
+
+#include "simple_set.hpp"
+
+
+class FineSet;
+
+class CustomMutex : public std::mutex {
+    // std::atomic_bool locked = false;
+    bool locked = false;
+
+public:
+    void lock() {
+        mutex::lock();
+        locked = true;
+        // locked.store(true);
+    }
+
+    void unlock() {
+        // locked.store(false);
+        locked = false;
+        mutex::unlock();
+    }
+
+    bool try_lock() {
+        const auto result = mutex::try_lock();
+        // locked.store(result);
+        locked = result;
+        return result;
+    }
+
+    bool is_locked() {
+        return this->locked;
+    }
+};
 
 
 /// The node used for the linked list implementation of a set in the [`FineSet`]
@@ -14,96 +50,35 @@ struct FineSetNode {
     FineSetNode(int value, const std::shared_ptr<FineSetNode> &next)
         : value(value),
           next(next),
-          mutex(std::mutex()) {
+          mutex(CustomMutex()) {
     }
 
     // A04: You can add or remove fields as needed.
     int value;
     std::shared_ptr<FineSetNode> next;
-    std::mutex mutex;
-};
+    CustomMutex mutex;
 
-inline std::mutex printMutex = std::mutex();
-
-/*
-class MyUniqueLock {
-public:
-    std::string identifier;
-    std::unique_lock<std::mutex> ul;
-
-public:
-    explicit MyUniqueLock(std::mutex &m, const std::string &identifier) {
-        this->identifier = identifier;
-        this->locking_pl();
-        this->ul = std::unique_lock<std::mutex>(m);
-        this->locked_pl();
+    void lock() {
+        this->mutex.lock();
     }
 
-
-    explicit MyUniqueLock(const std::shared_ptr<FineSetNode> &node) {
-        this->identifier = "val=" + std::to_string(node->value);
-        locking_pl();
-        this->ul = std::unique_lock<std::mutex>(node->mutex);
-        locked_pl();
+    void unlock() {
+        this->mutex.unlock();
     }
 
-    ~MyUniqueLock() {
-        this->unlocking_pl();
-    };
+    // std::lock_guard<std::mutex> guard() {
+    //     lock();
+    //     return adopt_guard();
+    // }
+    //
+    // std::lock_guard<std::mutex> adopt_guard() {
+    //     return {this->mutex, std::adopt_lock};
+    // }
 
-    MyUniqueLock(MyUniqueLock &&u) noexcept {
-        // printMutex.lock();
-        // std::cout << "tr:" << id() << " " << "Moving " << identifier << "(Locked:" << this->
-        //         owns_lock() << ")" << std::endl;
-        // printMutex.unlock();
-
-        this->ul = std::unique_lock<std::mutex>(std::move(u.ul));
-    }
-
-    MyUniqueLock &operator=(MyUniqueLock &&u) noexcept {
-        // printMutex.lock();
-        // // std::cout << "tr:" << id() << " " << "= operator " << this->identifier << std::endl;
-        // printMutex.unlock();
-        unlocking_pl();
-        this->identifier = u.identifier;
-        locking_pl();
-        this->ul = std::move(u.ul);
-        locked_pl();
-        return *this;
-    }
-
-    static std::string id() {
-        std::stringstream ss;
-        ss << std::this_thread::get_id();
-        std::string st = ss.str();
-        return st.substr(st.length() - 5, 2);
-    }
-
-    [[nodiscard]] bool owns_lock() const {
-        return this->ul.owns_lock();
-    }
-
-    void locking_pl() {
-        // printMutex.lock();
-        // std::cout << "tr:" << id() << " " << "🐣Locking " << identifier << std::endl;
-        // printMutex.unlock();
-    }
-
-    void unlocking_pl() {
-        // printMutex.lock();
-        // std::cout << "tr:" << id() << " " << "🐥Unlocked " << identifier << std::endl;
-        // printMutex.unlock();
-    }
-
-    void locked_pl() {
-        // printMutex.lock();
-        // std::cout << "tr:" << id() << " " << "🥚Locked " << identifier << std::endl;
-        // printMutex.unlock();
+    bool is_locked() {
+        return this->mutex.is_locked();
     }
 };
-*/
-
-
 
 
 /// A set implementation using a linked list with fine grained locking.
@@ -111,10 +86,13 @@ class FineSet : public Set {
 private:
     // A04: You can add or remove fields as needed. Just having the `head`
     // pointer should be sufficient for task 4
+public:
     std::shared_ptr<FineSetNode> head;
     // used to lock head b/c could be nullptr,
-    std::mutex headLock;
+    CustomMutex pre_head_lock;
+    std::shared_mutex action_lock;
     EventMonitor<FineSet, StdSet, SetOperator> *monitor;
+
 
 public:
     FineSet(EventMonitor<FineSet, StdSet, SetOperator> *monitor) : monitor(monitor) {
@@ -129,165 +107,217 @@ public:
     }
 
     bool add(int elem) override {
-        // lock headlock, b/c we don't know if head is null
-        auto headLock = std::unique_lock(this->headLock);
+        std::shared_lock actionGaurd(action_lock);
         // If the list is empty add the value and return true
+        pre_head_lock.lock();
+
         if (this->head == nullptr) {
             this->head = std::make_shared<FineSetNode>(elem, nullptr);
-            // set point
-            this->monitor->add(SetEvent(SetOperator::Add, elem, true));
+            this->monitor->add(SetEvent(Add, elem, true));
+            pre_head_lock.unlock();
+            actionGaurd.unlock();
             return true;
-            // currentLock unlocks here b/c destructor
         }
-        headLock.unlock();
-        // since we know now the head is not null we can lock the lock owned by head, which automatically unlocks headLock
+        // head is locked,
+
+        auto head_ref = this->head;
+        head_ref->lock();
+
         // one element ie [2]
-        auto prev = this->head;
-        auto prevLock = std::unique_lock(this->head->mutex);
         if (this->head->value == elem) {
-            this->monitor->add(SetEvent(SetOperator::Add, elem, false));
+            this->monitor->add(SetEvent(Add, elem, false));
+            head_ref->unlock();
+            pre_head_lock.unlock();
+            actionGaurd.unlock();
             return false;
-            // currentLock unlocks here b/c destructor
         }
         // if the current head value is more than
         if (this->head->value > elem) {
-            // std::unique_ptr<FineSetNode> el = ;
+            // std::unique_ptr<SimpleSetNode> el = ;
             this->head = std::make_shared<FineSetNode>(elem, this->head);
-            this->monitor->add(SetEvent(SetOperator::Add, elem, true));
+            this->monitor->add(SetEvent(Add, elem, true));
+            head_ref->unlock();
+            pre_head_lock.unlock();
+            actionGaurd.unlock();
             return true;
-            // currentLock unlocks here b/c destructor
         }
         if (this->head->next == nullptr) {
             this->head->next = std::make_shared<FineSetNode>(elem, nullptr);
-            this->monitor->add(SetEvent(SetOperator::Add, elem, true));
-            return true;
-            // currentLock unlocks here b/c destructor
-        }
-        // 2+ elements
+            this->monitor->add(SetEvent(Add, elem, true));
+            head_ref->unlock();
+            pre_head_lock.unlock();
+            actionGaurd.unlock();
 
+            return true;
+        }
+
+        // 2+ elements
+        auto prev = this->head; // locked above
         auto next = this->head->next;
-        auto nextLock = std::unique_lock(next->mutex);
-        // std::lock(prevLock, nextLock);
+        next->lock();
+
+        pre_head_lock.unlock();
+
         // find the smallest value larger than elem, or the end of the list
         while (next != nullptr && elem > next->value) {
-            prev = next;
-            prevLock.unlock();
-            // this unlocks the lock for the old prev, and takes the existing lock for the next
-            prevLock = std::unique_lock(std::move(nextLock));
+            const auto prevPrev = prev;
+            prev = next; // this has been locked right after when next was assigned
             next = prev->next;
             if (next != nullptr) {
-                // acquires/locks the "next" lock
-                nextLock = std::unique_lock(next->mutex);
+                next->lock();
             }
+            prevPrev->unlock();
         }
+
         if (next == nullptr) {
             // there isn't any value larger than elem
             prev->next = std::make_shared<FineSetNode>(elem, nullptr);
-            this->monitor->add(SetEvent(SetOperator::Add, elem, true));
+            this->monitor->add(SetEvent(Add, elem, true));
+            prev->unlock();
+            actionGaurd.unlock();
+
             return true;
-            // prevLock unlocks here b/c destructor, nextLock shouldn't be locking anything
         }
+
         if (next->value == elem) {
-            this->monitor->add(SetEvent(SetOperator::Add, elem, false));
+            this->monitor->add(SetEvent(Add, elem, false));
+            prev->unlock();
+            next->unlock();
+            actionGaurd.unlock();
             return false;
-            // prevLock & nextLock unlocks here b/c destructor
         }
+
         prev->next = std::make_shared<FineSetNode>(elem, next);
-        this->monitor->add(SetEvent(SetOperator::Add, elem, true));
+        this->monitor->add(SetEvent(Add, elem, true));
+        prev->unlock();
+        next->unlock();
+        actionGaurd.unlock();
         return true;
-        // prevLock & nextLock unlocks here b/c destructor
     }
 
     bool rmv(int elem) override {
-        // lock headlock, b/c we don't know if head is null
-        std::unique_lock<std::mutex> currentLock = std::unique_lock(this->headLock);
+        std::unique_lock actionGaurd(action_lock);
+        // If the list is empty add the value and return true
+        pre_head_lock.lock();
         if (this->head == nullptr) {
-            this->monitor->add(SetEvent(SetOperator::Remove, elem, false));
+            this->monitor->add(SetEvent(Remove, elem, false));
+            pre_head_lock.unlock();
+            actionGaurd.unlock();
             return false;
         }
-        // since we know now the head is not null we can lock the lock owned by head, which automatically unlocks headLock
-        auto prev = this->head;
-        auto prevLock = std::unique_lock(this->head->mutex);
-        currentLock.unlock();
-
+        auto head_ref = this->head;
+        head_ref->lock();
         // one element ie [2]
         if (this->head->value == elem) {
+            if (this->head->next == nullptr) {
+                this->head = nullptr;
+                this->monitor->add(SetEvent(Remove, elem, true));
+                head_ref->unlock();
+                pre_head_lock.unlock();
+                actionGaurd.unlock();
+
+                return true;
+            }
             this->head = this->head->next;
-            this->monitor->add(SetEvent(SetOperator::Remove, elem, true));
+            this->monitor->add(SetEvent(Remove, elem, true));
+            head_ref->unlock();
+            pre_head_lock.unlock();
+            actionGaurd.unlock();
+
             return true;
         }
-        if (this->head->next == nullptr) {
-            this->monitor->add(SetEvent(SetOperator::Remove, elem, false));
-            return false;
-        }
-        // 2+ elements
 
-        auto possible_value_to_remove = this->head->next;
-        auto possibleLock = std::unique_lock(possible_value_to_remove->mutex);
-        // find the smallest value larger than elem, or the end of the list
-        while (possible_value_to_remove != nullptr && elem != possible_value_to_remove->value) {
-            prev = possible_value_to_remove;
-            // this unlocks the lock for the old prev, and takes the existing lock for possible as prev = possible
-            prevLock.unlock();
-            prevLock = std::unique_lock(std::move(possibleLock));
-            possible_value_to_remove = prev->next;
-            if (possible_value_to_remove != nullptr) {
-                // acquires/locks the "possible_value_to_remove" lock
-                possibleLock = std::unique_lock(possible_value_to_remove->mutex);
-            }
-        }
-        // made it to the end of the list without finding elem
-        if (possible_value_to_remove == nullptr) {
-            this->monitor->add(SetEvent(SetOperator::Remove, elem, false));
+        if (this->head->next == nullptr) {
+            this->monitor->add(SetEvent(Remove, elem, false));
+            pre_head_lock.unlock();
+            head_ref->unlock();
+            actionGaurd.unlock();
+
             return false;
-            // unlocks both possibleLock & prevLock b/c destructor
+        }
+
+        // 2+ elements
+        auto prev = this->head; // locked above
+        auto current = this->head->next;
+        current->lock();
+        pre_head_lock.unlock();
+
+        // find the smallest value larger than elem, or the end of the list
+        while (current != nullptr && elem != current->value) {
+            const auto prevPrev = prev;
+            prev = current;
+            current = prev->next;
+            if (current != nullptr) {
+                current->lock();
+            }
+            prevPrev->unlock();
+        }
+
+        // made it to the end of the list without finding elem
+        if (current == nullptr) {
+            this->monitor->add(SetEvent(Remove, elem, false));
+            prev->unlock();
+            actionGaurd.unlock();
+            return false;
         }
         // found elem
-        prev->next = possible_value_to_remove->next;
-        this->monitor->add(SetEvent(SetOperator::Remove, elem, true));
+        prev->next = current->next;
+        this->monitor->add(SetEvent(Remove, elem, true));
+        prev->unlock();
+        current->unlock();
+        actionGaurd.unlock();
+
         return true;
-        // unlocks both possibleLock & prevLock b/c destructor
     }
 
     bool ctn(int elem) override {
-        auto currentLock = std::unique_lock(this->headLock);
-        if (this->head == nullptr) {
-            this->monitor->add(SetEvent(SetOperator::Contains, elem, false));
-            return false;
-            // unlocks currentLock b/c destructor
-        }
+        std::shared_lock actionGaurd(action_lock);
 
+        pre_head_lock.lock(); // lock the possibility of a nullptr
         auto node = this->head;
+        if (node == nullptr) {
+            this->monitor->add(SetEvent(Contains, elem, false));
+            pre_head_lock.unlock();
+            actionGaurd.unlock();
+            return false;
+        }
+        node->lock();
+        pre_head_lock.unlock();
         while (true) {
+            // node should be locked
             if (node->value == elem) {
-                this->monitor->add(SetEvent(SetOperator::Contains, elem, true));
+                this->monitor->add(SetEvent(Contains, elem, true));
+                node->unlock();
+                actionGaurd.unlock();
                 return true;
-                // unlocks currentLock b/c destructor
             }
-            if (node->next == nullptr) {
-                this->monitor->add(SetEvent(SetOperator::Contains, elem, false));
+            if (node->next == nullptr || elem < node->next->value) {
+                // sorted 0->inf
+                this->monitor->add(SetEvent(Contains, elem, false));
+                node->unlock();
+                actionGaurd.unlock();
                 return false;
-                // unlocks currentLock b/c destructor
             }
-            if (node->next->value > elem) {
-                this->monitor->add(SetEvent(SetOperator::Contains, elem, false));
-                return false;
-                // unlocks currentLock b/c destructor
-            }
+            auto prevNode = node;
             node = node->next;
-            // unlock previous node and lock current node
-            currentLock = std::unique_lock(node->mutex);
-            // to stop unused variable warning
-            (void) currentLock;
+            node->lock();
+            prevNode->unlock();
         }
     }
 
     std::stringstream str_state() {
         std::stringstream ss;
-        ss << "FineSet" << " {";
+        ss << "FineSet (H";
+        if (this->pre_head_lock.is_locked()) {
+            ss << "🔒";
+        }
+        ss << ") {";
         auto node = this->head;
         while (node != nullptr) {
             ss << node->value;
+            if (node->is_locked()) {
+                ss << "🔒";
+            }
             if (node->next != nullptr) {
                 ss << ", ";
             }
