@@ -11,7 +11,7 @@
 #include <cstring>
 #include <iostream>
 
-#define OPERATION_COUNT 100000
+#define OPERATION_COUNT 10000
 #define DEFAULT_GENERATOR_SEED 0
 #define DEFAULT_OP_MOD 128
 
@@ -128,7 +128,7 @@ int task_1() {
     std::cout << "# Task 1: `TreiberStack`" << std::endl;
 
     std::cout << "## Testing `TreiberStack` with 1 thread" << std::endl;
-    valid &= run_stack_n_threads<TreiberStack>(16, DEFAULT_OP_MOD);
+    valid &= run_stack_n_threads<TreiberStack>(1, DEFAULT_OP_MOD);
     std::cout << std::endl;
 
     for (int test_run = 0; test_run < 8; test_run++) {

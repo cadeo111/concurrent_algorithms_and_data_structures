@@ -10,6 +10,8 @@ struct TreiberStackNode {
     TreiberStackNode* next = nullptr;
 };
 
+// #define DEBUG_TRE_STACK
+
 class TreiberStack: public Stack {
 private:
     // A04: You can add or remove fields as needed.
@@ -33,7 +35,7 @@ public:
     }
 
     int push(int value) override {
-        int result = true;
+
 
         auto* new_node = new TreiberStackNode();
         new_node->value = value;
@@ -44,8 +46,11 @@ public:
             new_node->next = t;
             cas_lock.lock();
             if (std::atomic_compare_exchange_strong(&top, &t, new_node)) {
+#ifdef DEBUG_TRE_STACK
+                std::cout << "ro: push(" << value <<") -> 1"<< std::endl;
+#endif
 
-                this->monitor->add(StackEvent(StackOperator::StackPush, value, result));
+                this->monitor->add(StackEvent(StackOperator::StackPush, value, true));
                 this->count.fetch_add(1);
                 cas_lock.unlock();
                 break;
@@ -58,15 +63,20 @@ public:
         //      You can use the `cas_lock` to ensure that the event is
         //      inserted at the linearization point.
 
-        return result;
+        return true;
     }
 
     int pop() override {
-        int result = EMPTY_STACK_VALUE;
+        int result;
         while (true) {
-            TreiberStackNode *t = top.load();
+             result = EMPTY_STACK_VALUE;
             cas_lock.lock();
+            TreiberStackNode *t = top.load();
             if (t == nullptr) {
+#ifdef DEBUG_TRE_STACK
+                std::cout << "ro: pop() -> " << NO_ARGUMENT_VALUE << std::endl;
+#endif
+
                 this->monitor->add(StackEvent(StackOperator::StackPop, NO_ARGUMENT_VALUE, result));
                 cas_lock.unlock();
                 break;
@@ -75,7 +85,12 @@ public:
             result = t->value;
             cas_lock.lock();
             if (std::atomic_compare_exchange_strong(&top, &t, t->next)) {
-                this->monitor->add(StackEvent(StackOperator::StackPush,NO_ARGUMENT_VALUE , result));
+#ifdef DEBUG_TRE_STACK
+
+                std::cout << "ro: pop() -> " << result << std::endl;
+#endif
+
+                this->monitor->add(StackEvent(StackOperator::StackPop,NO_ARGUMENT_VALUE , result));
                 this->count.fetch_sub(1);
                 cas_lock.unlock();
                 break;
@@ -91,6 +106,11 @@ public:
     int size() override {
         cas_lock.lock();
         int result = count.load();
+#ifdef DEBUG_TRE_STACK
+
+        std::cout << "ro: size() -> " << result << std::endl;
+#endif
+
         this->monitor->add(StackEvent(StackOperator::StackSize, NO_ARGUMENT_VALUE, result));
         cas_lock.unlock();
         // A01: Add code to get the size of the stack.

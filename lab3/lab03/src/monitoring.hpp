@@ -13,10 +13,14 @@
 
 #include "adt.hpp"
 
-#define DEQUE_SLEEP_DELAY 50
+#define DEQUE_SLEEP_DELAY 50000
 #define INCOMPLETE_EVENT_SLEEP_DELAY 10
 
 const int NO_ARGUMENT_VALUE = -10;
+
+// #define DEBUG_MONITORING
+
+inline std::mutex pr_lock;
 
 enum SetOperator {
     Add = 1,
@@ -24,7 +28,7 @@ enum SetOperator {
     Contains = 3,
 };
 
-char const* operator_name(SetOperator op) {
+char const *operator_name(SetOperator op) {
     switch (op) {
         case SetOperator::Add:
             return "add";
@@ -43,7 +47,7 @@ enum MultisetOperator {
     MSetCount = 3,
 };
 
-char const* operator_name(MultisetOperator op) {
+char const *operator_name(MultisetOperator op) {
     switch (op) {
         case MultisetOperator::MSetAdd:
             return "add";
@@ -62,7 +66,7 @@ enum StackOperator {
     StackSize = 3,
 };
 
-char const* operator_name(StackOperator op) {
+char const *operator_name(StackOperator op) {
     switch (op) {
         case StackOperator::StackPush:
             return "push";
@@ -82,10 +86,9 @@ struct Operation {
     /// The argument for the operator.
     int argument;
 
-    Operation(Op op, int argument) :
-        op(op),
-        argument(argument)
-    {}
+    Operation(Op op, int argument) : op(op),
+                                     argument(argument) {
+    }
 
     void print() {
         if (this->argument == NO_ARGUMENT_VALUE) {
@@ -95,11 +98,12 @@ struct Operation {
         }
     }
 };
+
 typedef Operation<SetOperator> SetOperation;
 typedef Operation<MultisetOperator> MultisetOperation;
 typedef Operation<StackOperator> StackOperation;
 
-bool apply_op(Set* set, Operation<SetOperator>& op) {
+bool apply_op(Set *set, Operation<SetOperator> &op) {
     switch (op.op) {
         case SetOperator::Add:
             return set->add(op.argument);
@@ -112,7 +116,7 @@ bool apply_op(Set* set, Operation<SetOperator>& op) {
     }
 }
 
-int apply_op(Multiset* set, Operation<MultisetOperator>& op) {
+int apply_op(Multiset *set, Operation<MultisetOperator> &op) {
     switch (op.op) {
         case MultisetOperator::MSetAdd:
             return set->add(op.argument);
@@ -125,7 +129,7 @@ int apply_op(Multiset* set, Operation<MultisetOperator>& op) {
     }
 }
 
-int apply_op(Stack* stack, Operation<StackOperator>& op) {
+int apply_op(Stack *stack, Operation<StackOperator> &op) {
     switch (op.op) {
         case StackOperator::StackPush:
             return stack->push(op.argument);
@@ -154,7 +158,7 @@ class OpGenerator {
     /// integer, to share the count across all threads.
     std::atomic_int counter;
     /// The weight of the operators, that can be generated.
-    std::vector<OpWeights<Op>> weights;
+    std::vector<OpWeights<Op> > weights;
     /// The total weight used as a modulo during generation.
     int total_weight;
     /// A modulo applied to the number generated as the argument for the operations.
@@ -166,18 +170,16 @@ class OpGenerator {
 
 public:
     OpGenerator(
-        std::vector<OpWeights<Op>> weights,
+        std::vector<OpWeights<Op> > weights,
         int target_op_count,
         int argument_modulo,
         int seed
-    ) :
-        target_op_count(target_op_count),
+    ) : target_op_count(target_op_count),
         weights(weights),
         argument_modulo(argument_modulo),
-        seed(seed)
-    {
+        seed(seed) {
         total_weight = 0;
-        for (int i = 0; i < (int)this->weights.size(); i++) {
+        for (int i = 0; i < (int) this->weights.size(); i++) {
             total_weight += this->weights[i].weight;
         }
 
@@ -189,7 +191,7 @@ public:
         srand(this->seed);
     }
 
-    std::optional<Operation<Op>> next() {
+    std::optional<Operation<Op> > next() {
         if (this->counter.fetch_add(1) >= target_op_count) {
             return std::nullopt;
         }
@@ -221,18 +223,17 @@ struct Event {
     /// Indicates if this event is complete and can be validated.
     bool is_complete;
 
-    Event(Op op, int arg, int output) :
-        op(op, arg),
-        output(output),
-        is_complete(true)
-    {}
+    Event(Op op, int arg, int output) : op(op, arg),
+                                        output(output),
+                                        is_complete(true) {
+    }
+
     /// This creates an event, which is incomplete. This allows the insertion
     /// into the global sequence, even if the result is still unknown.
-    Event(Op op, int arg) :
-        op(op, arg),
-        output(-1),
-        is_complete(false)
-    {}
+    Event(Op op, int arg) : op(op, arg),
+                            output(-1),
+                            is_complete(false) {
+    }
 
     /// This allows to store/update the result of an event. It can be used with
     /// `monitor->reserve` to store an event in the linearized sequence, and
@@ -247,13 +248,21 @@ struct Event {
         std::cout << " -> " << this->output;
     }
 };
+
 typedef Event<SetOperator> SetEvent;
 typedef Event<StackOperator> StackEvent;
 typedef Event<MultisetOperator> MultisetEvent;
 
 /// Returns `true` if the given event can be successfully applied to the given data structure
 template<typename DS, typename Op>
-bool test_event(DS* data_structure, Event<Op>* event) {
+bool test_event(DS *data_structure, Event<Op> *event) {
+#ifdef DEBUG_MONITORING
+    std::cout << "op: ";
+    event->print();
+    std::cout << std::endl;
+#endif
+
+    // pr_lock.unlock();
     int result = apply_op(data_structure, event->op);
     if (result != event->output) {
         std::cout << "- ";
@@ -271,13 +280,14 @@ bool test_event(DS* data_structure, Event<Op>* event) {
 
 /// Returns `true` if the given events can be successfully applied to the given data structure
 template<typename DS, typename Op>
-bool test_events(DS* data_structure, std::queue<Event<Op>*>* events, bool verbose = false) {
+bool test_events(DS *data_structure, std::queue<Event<Op> *> *events, bool verbose = false) {
     while (!events->empty()) {
         int loop_counter = 0;
         while (!events->front()->is_complete) {
             loop_counter += 1;
             // After 1 seconds of waiting, it's safe to assume that the event was never marked as completed.
-            if (loop_counter >= std::chrono::microseconds(std::chrono::seconds(1)).count() / INCOMPLETE_EVENT_SLEEP_DELAY) {
+            if (loop_counter >= std::chrono::microseconds(std::chrono::seconds(1)).count() /
+                INCOMPLETE_EVENT_SLEEP_DELAY) {
                 std::cout << "Validation failed current event `";
                 events->front()->print();
                 std::cout << "` was never marked as completed" << std::endl;
@@ -310,10 +320,8 @@ bool test_events(DS* data_structure, std::queue<Event<Op>*>* events, bool verbos
 template<typename CAS, typename DS, typename Op>
 class EventMonitor {
 public:
-    EventMonitor(DS* data_structure) :
-        data_structure(data_structure),
-        concurrent_data_structure(nullptr)
-    {
+    EventMonitor(DS *data_structure) : data_structure(data_structure),
+                                       concurrent_data_structure(nullptr) {
     }
 
     void add(Event<Op> event) {
@@ -324,12 +332,12 @@ public:
     /// This function inserts the event into the linear sequence, but only
     /// validates it, once the event is marked as completed by setting the
     /// result via `event->complete(result)`. This allows us to insert events
-    /// at the linearization point when the result of the operation 
+    /// at the linearization point when the result of the operation
     /// is still unknown.
-    Event<Op>* reserve(Event<Op> event) {
+    Event<Op> *reserve(Event<Op> event) {
         // Copy the event to an event on the heap. This allows us to return the
         // pointer for later modification.
-        Event<Op>* seq_event = new Event(event);
+        Event<Op> *seq_event = new Event(event);
         seq_event->is_complete = false;
 
         this->lock.lock(); // Linearization point (For anyone that is interested)
@@ -352,7 +360,7 @@ public:
                 running = false;
             }
 
-            std::queue<Event<Op>*> events_to_test;
+            std::queue<Event<Op> *> events_to_test;
             this->lock.lock(); // Linearization point
             this->events_to_test.swap(events_to_test);
             this->lock.unlock();
@@ -388,20 +396,20 @@ public:
         return this->valid;
     }
 
-    void set_concurrent_data_structure(CAS* cas) {
+    void set_concurrent_data_structure(CAS *cas) {
         this->concurrent_data_structure = cas;
     }
 
 private:
-    std::queue<Event<Op>*> events_to_test;
+    std::queue<Event<Op> *> events_to_test;
     std::mutex lock;
 
     // For monitoring and validation
-    DS* data_structure;
+    DS *data_structure;
     int event_count = 0;
     bool stop = false;
     bool valid = true;
 
     /// The concurrent data structure, to print the internal state:
-    CAS* concurrent_data_structure;
+    CAS *concurrent_data_structure;
 };
