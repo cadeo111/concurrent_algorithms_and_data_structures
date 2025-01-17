@@ -17,6 +17,8 @@ private:
     // A04: You can add or remove fields as needed.
     std::atomic<TreiberStackNode*> top;
     std::atomic<int> count;
+    std::atomic<TreiberStackNode*> toDelete1;
+    std::atomic<TreiberStackNode*> toDelete2;
 
     EventMonitor<TreiberStack, StdStack, StackOperator>* monitor;
     /// This lock can be used around the CAS operation, to insert the
@@ -52,6 +54,7 @@ public:
 
                 this->monitor->add(StackEvent(StackOperator::StackPush, value, true));
                 this->count.fetch_add(1);
+
                 cas_lock.unlock();
                 break;
             }
@@ -82,16 +85,17 @@ public:
                 break;
             }
             cas_lock.unlock();
-            result = t->value;
+            auto current_top = t;
+            result = current_top->value;
             cas_lock.lock();
             if (std::atomic_compare_exchange_strong(&top, &t, t->next)) {
 #ifdef DEBUG_TRE_STACK
 
                 std::cout << "ro: pop() -> " << result << std::endl;
 #endif
-
                 this->monitor->add(StackEvent(StackOperator::StackPop,NO_ARGUMENT_VALUE , result));
                 this->count.fetch_sub(1);
+                // memory
                 cas_lock.unlock();
                 break;
             }
